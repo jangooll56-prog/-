@@ -9,7 +9,7 @@ import StructureDisplay from './components/StructureDisplay';
 const QUESTIONS_COUNT = 10;
 const MATCH_PAIRS_COUNT = 5;
 const MATCH_ROUNDS = 3;
-const RIDDLE_COUNT = 5;
+const RIDDLE_COUNT = 10;
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<QuizStatus>(QuizStatus.START);
@@ -59,6 +59,7 @@ const App: React.FC = () => {
     setCurrentIndex(0);
     setScore(0);
     setResults([]);
+    // Shuffle all available riddles
     const order = Array.from({length: PREDEFINED_RIDDLES.length}, (_, i) => i).sort(() => Math.random() - 0.5);
     setRiddleOrder(order);
     generateRiddle(order[0]);
@@ -227,7 +228,7 @@ const App: React.FC = () => {
               >
                 <div className="text-left">
                   <div className="text-lg">Mystery Riddles</div>
-                  <div className="text-xs font-normal opacity-70">5 ข้อ ทายจากคำใบ้ (รวดเร็ว!)</div>
+                  <div className="text-xs font-normal opacity-70">{RIDDLE_COUNT} ข้อ ทายจากคำใบ้ (รวดเร็ว!)</div>
                 </div>
                 <i className="fa-solid fa-ghost text-2xl"></i>
               </button>
