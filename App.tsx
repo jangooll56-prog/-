@@ -1,14 +1,14 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { QuizStatus, FunctionalGroup, QuizResult, GameMode, MatchItem } from './types';
-import { FUNCTIONAL_GROUPS, CREATORS, ENCOURAGEMENT_PHOTO_URL, SUCCESS_PHRASES } from './constants';
-import { getFunctionalGroupFact, getRiddleForGroup } from './services/geminiService';
+import { FUNCTIONAL_GROUPS, CREATORS, ENCOURAGEMENT_PHOTO_URL, SUCCESS_PHRASES, PREDEFINED_RIDDLES } from './constants';
+import { getFunctionalGroupFact } from './services/geminiService';
 import FormulaDisplay from './components/FormulaDisplay';
 import StructureDisplay from './components/StructureDisplay';
 
 const QUESTIONS_COUNT = 10;
-const MATCH_PAIRS_COUNT = 5; // Increased pairs per round
-const MATCH_ROUNDS = 3;     // Added multiple rounds
+const MATCH_PAIRS_COUNT = 5;
+const MATCH_ROUNDS = 3;
 const RIDDLE_COUNT = 5;
 
 const App: React.FC = () => {
@@ -27,8 +27,8 @@ const App: React.FC = () => {
   // Riddle State
   const [clues, setClues] = useState<string[]>([]);
   const [visibleClueCount, setVisibleClueCount] = useState(1);
-  const [isLoadingRiddle, setIsLoadingRiddle] = useState(false);
   const [randomSuccessPhrase, setRandomSuccessPhrase] = useState('');
+  const [riddleOrder, setRiddleOrder] = useState<number[]>([]);
 
   // Matching Game State
   const [matchItems, setMatchItems] = useState<MatchItem[]>([]);
@@ -59,7 +59,9 @@ const App: React.FC = () => {
     setCurrentIndex(0);
     setScore(0);
     setResults([]);
-    generateRiddle();
+    const order = Array.from({length: PREDEFINED_RIDDLES.length}, (_, i) => i).sort(() => Math.random() - 0.5);
+    setRiddleOrder(order);
+    generateRiddle(order[0]);
     setStatus(QuizStatus.RIDDLE);
   };
 
@@ -72,37 +74,28 @@ const App: React.FC = () => {
     setSelectedAnswer(null);
     setIsCorrect(null);
     setFact('');
-    
-    // Optimistically pre-fetch fact for this group to have it ready for feedback
     getFunctionalGroupFact(randomGroup.name);
   }, []);
 
-  const generateRiddle = async () => {
-    setIsLoadingRiddle(true);
+  const generateRiddle = (index: number) => {
+    const riddle = PREDEFINED_RIDDLES[index];
+    const group = FUNCTIONAL_GROUPS.find(g => g.name === riddle.answer) || FUNCTIONAL_GROUPS[0];
+    
+    setCurrentGroup(group);
+    setClues(riddle.clues);
     setVisibleClueCount(1);
     setSelectedAnswer(null);
     setIsCorrect(null);
     setFact('');
-    
-    const randomGroup = FUNCTIONAL_GROUPS[Math.floor(Math.random() * FUNCTIONAL_GROUPS.length)];
-    setCurrentGroup(randomGroup);
 
-    // This uses the cached response if available, making repeated rounds instant
-    const riddleData = await getRiddleForGroup(randomGroup.name);
-    setClues(riddleData.clues);
-    
-    const otherOptions = FUNCTIONAL_GROUPS.filter(g => g.name !== randomGroup.name).map(g => g.name).sort(() => 0.5 - Math.random()).slice(0, 3);
-    const allOptions = [...otherOptions, randomGroup.name].sort(() => 0.5 - Math.random());
+    const otherOptions = FUNCTIONAL_GROUPS.filter(g => g.name !== group.name).map(g => g.name).sort(() => 0.5 - Math.random()).slice(0, 3);
+    const allOptions = [...otherOptions, group.name].sort(() => 0.5 - Math.random());
     setOptions(allOptions);
     
-    setIsLoadingRiddle(false);
-    
-    // Also pre-fetch fact
-    getFunctionalGroupFact(randomGroup.name);
+    getFunctionalGroupFact(group.name);
   };
 
   const generateMatchingSet = () => {
-    // Select random groups for this round
     const selected = [...FUNCTIONAL_GROUPS].sort(() => 0.5 - Math.random()).slice(0, MATCH_PAIRS_COUNT);
     const items: MatchItem[] = [];
     selected.forEach(g => {
@@ -133,16 +126,13 @@ const App: React.FC = () => {
       setSelectedMatchId(null);
       setScore(s => s + 1);
       
-      // Check if current set is cleared
       if (newMatched.length === matchItems.length) {
         if (currentMatchRound < MATCH_ROUNDS) {
-          // Next Round
           setTimeout(() => {
             setCurrentMatchRound(prev => prev + 1);
             generateMatchingSet();
           }, 600);
         } else {
-          // Finish Game
           setTimeout(() => setStatus(QuizStatus.RESULTS), 800);
         }
       }
@@ -160,11 +150,12 @@ const App: React.FC = () => {
     setIsCorrect(correct);
     if (correct) {
       setScore(s => s + 1);
-      setRandomSuccessPhrase(SUCCESS_PHRASES[Math.floor(Math.random() * SUCCESS_PHRASES.length)]);
+      const phrase = SUCCESS_PHRASES[Math.floor(Math.random() * SUCCESS_PHRASES.length)];
+      setRandomSuccessPhrase(phrase);
     }
 
     setResults(prev => [...prev, {
-      question: mode === GameMode.RIDDLE ? "ทายปริศนา" : (currentGroup?.formula || ''),
+      question: mode === GameMode.RIDDLE ? "คำทายปริศนา" : (currentGroup?.formula || ''),
       correctAnswer: currentGroup?.name || '',
       userAnswer: answer,
       isCorrect: correct
@@ -182,8 +173,9 @@ const App: React.FC = () => {
   const nextQuestion = () => {
     const limit = mode === GameMode.RIDDLE ? RIDDLE_COUNT : QUESTIONS_COUNT;
     if (currentIndex + 1 < limit) {
-      setCurrentIndex(i => i + 1);
-      if (mode === GameMode.RIDDLE) generateRiddle();
+      const nextIdx = currentIndex + 1;
+      setCurrentIndex(nextIdx);
+      if (mode === GameMode.RIDDLE) generateRiddle(riddleOrder[nextIdx]);
       else generateQuestion();
       setStatus(mode === GameMode.RIDDLE ? QuizStatus.RIDDLE : QuizStatus.QUESTION);
     } else {
@@ -199,13 +191,13 @@ const App: React.FC = () => {
           <i className="fa-solid fa-flask-vial text-white text-3xl"></i>
         </div>
         <h1 className="text-3xl font-extrabold text-black tracking-tight">Chemistry Quest</h1>
-        <p className="text-black font-medium opacity-80">Master of Functional Groups</p>
+        <p className="text-black font-medium opacity-80">Master Functional Groups</p>
       </div>
 
       <div className="glass rounded-[32px] p-6 shadow-2xl overflow-hidden relative min-h-[450px]">
         {status === QuizStatus.START && (
           <div className="text-center space-y-4 py-8 animate-in fade-in duration-300">
-            <h2 className="text-2xl font-bold text-black mb-4">Choose Your Mode</h2>
+            <h2 className="text-2xl font-bold text-black mb-4">เลือกโหมดการเล่น</h2>
             <div className="grid grid-cols-1 gap-4">
               <button
                 onClick={startQuiz}
@@ -213,7 +205,7 @@ const App: React.FC = () => {
               >
                 <div className="text-left">
                   <div className="text-lg">Quiz Mode</div>
-                  <div className="text-xs font-normal opacity-70">10 Questions (Formula + Structure)</div>
+                  <div className="text-xs font-normal opacity-70">10 ข้อ (ทายจากสูตร + โครงสร้าง)</div>
                 </div>
                 <i className="fa-solid fa-list-check text-2xl"></i>
               </button>
@@ -224,7 +216,7 @@ const App: React.FC = () => {
               >
                 <div className="text-left">
                   <div className="text-lg">Matching Mania</div>
-                  <div className="text-xs font-normal opacity-70">{MATCH_ROUNDS} Rounds • {MATCH_PAIRS_COUNT} Pairs</div>
+                  <div className="text-xs font-normal opacity-70">{MATCH_ROUNDS} รอบ • รอบละ {MATCH_PAIRS_COUNT} คู่</div>
                 </div>
                 <i className="fa-solid fa-puzzle-piece text-2xl"></i>
               </button>
@@ -235,7 +227,7 @@ const App: React.FC = () => {
               >
                 <div className="text-left">
                   <div className="text-lg">Mystery Riddles</div>
-                  <div className="text-xs font-normal opacity-70">Sequential Hints & Clues</div>
+                  <div className="text-xs font-normal opacity-70">5 ข้อ ทายจากคำใบ้ (รวดเร็ว!)</div>
                 </div>
                 <i className="fa-solid fa-ghost text-2xl"></i>
               </button>
@@ -259,7 +251,7 @@ const App: React.FC = () => {
             <div className="flex justify-between items-center">
               <div className="flex flex-col">
                 <h2 className="text-xl font-bold text-black flex items-center">
-                  <i className="fa-solid fa-link mr-2 text-purple-600"></i> Matching
+                  <i className="fa-solid fa-link mr-2 text-purple-600"></i> จับคู่
                 </h2>
                 <span className="text-[10px] font-bold text-purple-600 uppercase tracking-tighter">Round {currentMatchRound} of {MATCH_ROUNDS}</span>
               </div>
@@ -293,48 +285,37 @@ const App: React.FC = () => {
               <span className="text-black font-bold">Score: <span className="text-indigo-600">{score}</span></span>
             </div>
 
-            <div className="bg-indigo-50 border-2 border-indigo-200 rounded-3xl p-6 min-h-[200px] flex flex-col justify-center space-y-4">
-              {isLoadingRiddle ? (
-                <div className="flex flex-col items-center space-y-3">
-                  <i className="fa-solid fa-spinner fa-spin text-3xl text-indigo-400"></i>
-                  <p className="text-indigo-400 font-bold animate-pulse">กำลังซ่อนคำใบ้...</p>
-                </div>
-              ) : (
-                <>
-                  <h3 className="text-center font-bold text-indigo-800 text-lg mb-2">ฉันคือใคร?</h3>
-                  <div className="space-y-3">
-                    {clues.slice(0, visibleClueCount).map((clue, idx) => (
-                      <div key={idx} className="p-3 bg-white rounded-xl shadow-sm border-l-4 border-indigo-500 animate-in slide-in-from-left duration-500">
-                        <span className="font-bold text-indigo-600 mr-2">#{idx+1}</span>
-                        <span className="text-black font-medium">{clue}</span>
-                      </div>
-                    ))}
+            <div className="bg-indigo-50 border-2 border-indigo-200 rounded-3xl p-6 min-h-[220px] flex flex-col justify-center space-y-4">
+              <h3 className="text-center font-bold text-indigo-800 text-lg mb-2">ทายสิว่า ฉันคือหมู่ฟังก์ชันอะไร?</h3>
+              <div className="space-y-3">
+                {clues.slice(0, visibleClueCount).map((clue, idx) => (
+                  <div key={idx} className="p-3 bg-white rounded-xl shadow-sm border-l-4 border-indigo-500 animate-in slide-in-from-left duration-300" style={{ animationDelay: `${idx * 100}ms` }}>
+                    <span className="font-bold text-indigo-600 mr-2">คำใบ้ที่ {idx+1}</span>
+                    <span className="text-black font-medium">{clue}</span>
                   </div>
-                  {visibleClueCount < 3 && !isLoadingRiddle && (
-                    <button 
-                      onClick={() => setVisibleClueCount(prev => prev + 1)}
-                      className="mt-4 text-indigo-600 font-bold text-sm hover:underline"
-                    >
-                      <i className="fa-solid fa-eye mr-2"></i> เปิดคำใบ้ถัดไป
-                    </button>
-                  )}
-                </>
+                ))}
+              </div>
+              {visibleClueCount < 3 && (
+                <button 
+                  onClick={() => setVisibleClueCount(prev => prev + 1)}
+                  className="mt-4 text-indigo-600 font-bold text-sm hover:underline flex items-center justify-center active:scale-95 transition-transform"
+                >
+                  <i className="fa-solid fa-eye mr-2"></i> เปิดคำใบ้ถัดไป
+                </button>
               )}
             </div>
 
-            {!isLoadingRiddle && (
-              <div className="grid grid-cols-2 gap-3">
-                {options.map((option) => (
-                  <button
-                    key={option}
-                    onClick={() => handleAnswer(option)}
-                    className="p-3 border-2 border-slate-200 rounded-xl text-black font-bold hover:bg-indigo-50 hover:border-indigo-300 transition-all active:scale-95"
-                  >
-                    {option}
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className="grid grid-cols-2 gap-3">
+              {options.map((option) => (
+                <button
+                  key={option}
+                  onClick={() => handleAnswer(option)}
+                  className="p-3 border-2 border-slate-200 rounded-xl text-black font-bold hover:bg-indigo-50 hover:border-indigo-300 transition-all active:scale-95"
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -380,9 +361,18 @@ const App: React.FC = () => {
               </div>
             )}
             <div className="text-black text-sm leading-relaxed min-h-[40px]">
-              {isLoadingFact ? <div className="h-4 bg-slate-100 rounded animate-pulse w-full"></div> : <div className="bg-slate-50 p-3 rounded-xl italic opacity-90 text-center">"{fact}"</div>}
+              {isLoadingFact ? (
+                <div className="flex items-center justify-center py-4 text-blue-500">
+                  <i className="fa-solid fa-circle-notch fa-spin text-2xl"></i>
+                  <span className="ml-3 font-medium">กำลังโหลดข้อมูลน่าสนใจ...</span>
+                </div>
+              ) : (
+                <div className="bg-slate-50 p-3 rounded-xl italic opacity-90 text-center">"{fact}"</div>
+              )}
             </div>
-            <button onClick={nextQuestion} className="w-full mt-4 bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 rounded-xl transition-all">Next Question</button>
+            <button onClick={nextQuestion} className="w-full mt-4 bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 rounded-xl transition-all active:scale-[0.98]">
+              {currentIndex + 1 === RIDDLE_COUNT && mode === GameMode.RIDDLE ? 'ดูคะแนนรวม' : (currentIndex + 1 === QUESTIONS_COUNT ? 'ดูคะแนนรวม' : 'ข้อถัดไป')}
+            </button>
           </div>
         )}
 
@@ -390,12 +380,12 @@ const App: React.FC = () => {
           <div className="text-center py-4 space-y-6 animate-in fade-in duration-700">
             <div className="relative inline-block"><div className="text-7xl mb-2">🏆</div></div>
             <div>
-              <h2 className="text-3xl font-extrabold text-black mb-1">ยินดีด้วย!</h2>
+              <h2 className="text-3xl font-extrabold text-black mb-1">สุดยอดไปเลย!</h2>
               <p className="text-black font-medium opacity-70">
-                {mode === GameMode.RIDDLE ? `ไขปริศนาไปได้ ${score} ข้อ!` : `คุณได้คะแนน ${score} เต็ม ${mode === GameMode.QUIZ ? QUESTIONS_COUNT : (MATCH_PAIRS_COUNT * MATCH_ROUNDS)}`}
+                {mode === GameMode.RIDDLE ? `ทายปริศนาสำเร็จไปได้ ${score} ข้อ!` : `คุณได้คะแนน ${score} เต็ม ${mode === GameMode.QUIZ ? QUESTIONS_COUNT : (MATCH_PAIRS_COUNT * MATCH_ROUNDS)}`}
               </p>
             </div>
-            <button onClick={() => setStatus(QuizStatus.START)} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl transition-all">Back to Menu</button>
+            <button onClick={() => setStatus(QuizStatus.START)} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl transition-all active:scale-[0.98]">กลับสู่หน้าหลัก</button>
           </div>
         )}
       </div>
