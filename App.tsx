@@ -7,7 +7,8 @@ import FormulaDisplay from './components/FormulaDisplay';
 import StructureDisplay from './components/StructureDisplay';
 
 const QUESTIONS_COUNT = 10;
-const MATCH_PAIRS_COUNT = 4;
+const MATCH_PAIRS_COUNT = 5; // Increased pairs per round
+const MATCH_ROUNDS = 3;     // Added multiple rounds
 const RIDDLE_COUNT = 5;
 
 const App: React.FC = () => {
@@ -34,6 +35,7 @@ const App: React.FC = () => {
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
   const [matchedIds, setMatchedIds] = useState<string[]>([]);
   const [wrongMatchIds, setWrongMatchIds] = useState<string[]>([]);
+  const [currentMatchRound, setCurrentMatchRound] = useState(1);
 
   const startQuiz = () => {
     setMode(GameMode.QUIZ);
@@ -47,6 +49,7 @@ const App: React.FC = () => {
   const startMatching = () => {
     setMode(GameMode.MATCHING);
     setScore(0);
+    setCurrentMatchRound(1);
     generateMatchingSet();
     setStatus(QuizStatus.MATCHING);
   };
@@ -69,6 +72,9 @@ const App: React.FC = () => {
     setSelectedAnswer(null);
     setIsCorrect(null);
     setFact('');
+    
+    // Optimistically pre-fetch fact for this group to have it ready for feedback
+    getFunctionalGroupFact(randomGroup.name);
   }, []);
 
   const generateRiddle = async () => {
@@ -81,6 +87,7 @@ const App: React.FC = () => {
     const randomGroup = FUNCTIONAL_GROUPS[Math.floor(Math.random() * FUNCTIONAL_GROUPS.length)];
     setCurrentGroup(randomGroup);
 
+    // This uses the cached response if available, making repeated rounds instant
     const riddleData = await getRiddleForGroup(randomGroup.name);
     setClues(riddleData.clues);
     
@@ -89,9 +96,13 @@ const App: React.FC = () => {
     setOptions(allOptions);
     
     setIsLoadingRiddle(false);
+    
+    // Also pre-fetch fact
+    getFunctionalGroupFact(randomGroup.name);
   };
 
   const generateMatchingSet = () => {
+    // Select random groups for this round
     const selected = [...FUNCTIONAL_GROUPS].sort(() => 0.5 - Math.random()).slice(0, MATCH_PAIRS_COUNT);
     const items: MatchItem[] = [];
     selected.forEach(g => {
@@ -121,13 +132,24 @@ const App: React.FC = () => {
       setMatchedIds(newMatched);
       setSelectedMatchId(null);
       setScore(s => s + 1);
+      
+      // Check if current set is cleared
       if (newMatched.length === matchItems.length) {
-        setTimeout(() => setStatus(QuizStatus.RESULTS), 1000);
+        if (currentMatchRound < MATCH_ROUNDS) {
+          // Next Round
+          setTimeout(() => {
+            setCurrentMatchRound(prev => prev + 1);
+            generateMatchingSet();
+          }, 600);
+        } else {
+          // Finish Game
+          setTimeout(() => setStatus(QuizStatus.RESULTS), 800);
+        }
       }
     } else {
       setWrongMatchIds([firstItem.id, secondItem.id]);
       setSelectedMatchId(null);
-      setTimeout(() => setWrongMatchIds([]), 600);
+      setTimeout(() => setWrongMatchIds([]), 500);
     }
   };
 
@@ -182,12 +204,12 @@ const App: React.FC = () => {
 
       <div className="glass rounded-[32px] p-6 shadow-2xl overflow-hidden relative min-h-[450px]">
         {status === QuizStatus.START && (
-          <div className="text-center space-y-4 py-8">
+          <div className="text-center space-y-4 py-8 animate-in fade-in duration-300">
             <h2 className="text-2xl font-bold text-black mb-4">Choose Your Mode</h2>
             <div className="grid grid-cols-1 gap-4">
               <button
                 onClick={startQuiz}
-                className="group w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-6 rounded-2xl transition-all shadow-lg flex items-center justify-between"
+                className="group w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-6 rounded-2xl transition-all shadow-lg flex items-center justify-between active:scale-[0.98]"
               >
                 <div className="text-left">
                   <div className="text-lg">Quiz Mode</div>
@@ -198,18 +220,18 @@ const App: React.FC = () => {
               
               <button
                 onClick={startMatching}
-                className="group w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-4 px-6 rounded-2xl transition-all shadow-lg flex items-center justify-between"
+                className="group w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-4 px-6 rounded-2xl transition-all shadow-lg flex items-center justify-between active:scale-[0.98]"
               >
                 <div className="text-left">
                   <div className="text-lg">Matching Mania</div>
-                  <div className="text-xs font-normal opacity-70">Connect Names to Formulas</div>
+                  <div className="text-xs font-normal opacity-70">{MATCH_ROUNDS} Rounds • {MATCH_PAIRS_COUNT} Pairs</div>
                 </div>
                 <i className="fa-solid fa-puzzle-piece text-2xl"></i>
               </button>
 
               <button
                 onClick={startRiddle}
-                className="group w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-6 rounded-2xl transition-all shadow-lg flex items-center justify-between"
+                className="group w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-6 rounded-2xl transition-all shadow-lg flex items-center justify-between active:scale-[0.98]"
               >
                 <div className="text-left">
                   <div className="text-lg">Mystery Riddles</div>
@@ -233,12 +255,17 @@ const App: React.FC = () => {
         )}
 
         {status === QuizStatus.MATCHING && (
-          <div className="space-y-6 animate-in fade-in zoom-in duration-300">
+          <div className="space-y-6 animate-in fade-in zoom-in duration-300" key={`matching-round-${currentMatchRound}`}>
             <div className="flex justify-between items-center">
-              <h2 className="text-xl font-bold text-black flex items-center">
-                <i className="fa-solid fa-link mr-2 text-purple-600"></i> Matching
-              </h2>
-              <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-bold uppercase">Score: {score}</span>
+              <div className="flex flex-col">
+                <h2 className="text-xl font-bold text-black flex items-center">
+                  <i className="fa-solid fa-link mr-2 text-purple-600"></i> Matching
+                </h2>
+                <span className="text-[10px] font-bold text-purple-600 uppercase tracking-tighter">Round {currentMatchRound} of {MATCH_ROUNDS}</span>
+              </div>
+              <div className="text-right">
+                <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-bold uppercase">Score: {score}</span>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               {matchItems.map(item => {
@@ -246,7 +273,7 @@ const App: React.FC = () => {
                 const isMatched = matchedIds.includes(item.id);
                 const isWrong = wrongMatchIds.includes(item.id);
                 let btnClass = "border-2 transition-all p-3 min-h-[70px] rounded-xl flex items-center justify-center text-center font-bold text-sm ";
-                if (isMatched) btnClass += "bg-green-50 border-green-400 text-green-700 opacity-50";
+                if (isMatched) btnClass += "bg-green-100 border-green-400 text-green-700 opacity-50";
                 else if (isWrong) btnClass += "bg-red-100 border-red-500 text-red-700 shake";
                 else if (isSelected) btnClass += "bg-blue-600 border-blue-600 text-white scale-105 shadow-md";
                 else btnClass += "bg-white border-slate-200 text-black hover:border-purple-300 active:scale-95";
@@ -365,7 +392,7 @@ const App: React.FC = () => {
             <div>
               <h2 className="text-3xl font-extrabold text-black mb-1">ยินดีด้วย!</h2>
               <p className="text-black font-medium opacity-70">
-                {mode === GameMode.RIDDLE ? `ไขปริศนาไปได้ ${score} ข้อ!` : `คุณได้คะแนน ${score} เต็ม ${mode === GameMode.QUIZ ? QUESTIONS_COUNT : MATCH_PAIRS_COUNT}`}
+                {mode === GameMode.RIDDLE ? `ไขปริศนาไปได้ ${score} ข้อ!` : `คุณได้คะแนน ${score} เต็ม ${mode === GameMode.QUIZ ? QUESTIONS_COUNT : (MATCH_PAIRS_COUNT * MATCH_ROUNDS)}`}
               </p>
             </div>
             <button onClick={() => setStatus(QuizStatus.START)} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl transition-all">Back to Menu</button>

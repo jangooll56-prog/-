@@ -3,13 +3,22 @@ import { GoogleGenAI, Type } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
 
+// Cache objects to store results for the current session
+const factCache: Record<string, string> = {};
+const riddleCache: Record<string, { clues: string[] }> = {};
+
 export const getFunctionalGroupFact = async (groupName: string): Promise<string> => {
+  // Return from cache if available
+  if (factCache[groupName]) return factCache[groupName];
+
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: `Provide a very short, interesting scientific fact (1 sentence) about the functional group "${groupName}" and a common real-world application. For example: "Alcohols are used as fuels and disinfectants because of their hydroxyl group."`,
     });
-    return response.text || "Failed to load fact.";
+    const result = response.text || "Failed to load fact.";
+    factCache[groupName] = result;
+    return result;
   } catch (error) {
     console.error("Error fetching fact from Gemini:", error);
     return "Keep learning! Organic chemistry is the study of carbon compounds.";
@@ -17,6 +26,9 @@ export const getFunctionalGroupFact = async (groupName: string): Promise<string>
 };
 
 export const getRiddleForGroup = async (groupName: string): Promise<{ clues: string[] }> => {
+  // Return from cache if available
+  if (riddleCache[groupName]) return riddleCache[groupName];
+
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
@@ -41,6 +53,9 @@ export const getRiddleForGroup = async (groupName: string): Promise<{ clues: str
       }
     });
     const data = JSON.parse(response.text || '{"clues": []}');
+    if (data.clues && data.clues.length > 0) {
+      riddleCache[groupName] = data;
+    }
     return data;
   } catch (error) {
     console.error("Error generating riddle:", error);
